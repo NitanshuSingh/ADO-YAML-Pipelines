@@ -1,0 +1,91 @@
+parameters:
+- environment
+
+stages:
+- stage: StaticCodeAnalysis
+  displayName: checks the code for vulnerabilities
+  jobs:
+  - job: Checkov
+    displayName: checks the code for vulnerabilities
+    steps:
+    - task: CmdLine@2
+      displayName: Checkov
+      inputs:
+        script: 'checkov -d $(System.DefaultWorkingDirectory) -o junitxml --output-file-path $(System.DefaultWorkingDirectory)/'
+    - task: PublishTestResults@2
+      condition: succeeded()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'results_junitxml*'
+        testRunTitle: 'Checkov Report'
+  - job: tfsec
+    displayName: checks the code for vulnerabilities
+    steps:
+    - task: tfsec@1
+      displayName: tfsec
+      inputs:
+        version: 'v1.26.0'
+        dir: '$(System.DefaultWorkingDirectory)'
+  
+- stage: TerraformInitPlan
+  displayName: Initialize Terraform and plan the infra
+  jobs:
+  - job: TerraformInit
+    displayName: Terraform Init
+    steps:
+    - task: TerraformTask@5
+      displayName: Terraform Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendAzureRmUseEntraIdForAuthentication: false
+        backendServiceArm: '$(SVC_CON)'
+        backendAzureRmResourceGroupName: '$(BACKEND_RG_NAME)'
+        backendAzureRmStorageAccountName: '$(BACKEND_STRG_NAME)'
+        backendAzureRmContainerName: '$(BACKEND_CONTAINER_NAME)'
+        backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+    - task: TerraformTask@5
+      displayName: Terraform Plan
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        commandOptions: '--var-file ${{ parameters.environment }}.terraform.tfvars'
+        environmentServiceNameAzureRM: '$(SVC_CON)'
+    
+- stage: ManualValidationAndApply
+  displayName: Manual validation and apply
+  jobs:
+  - job: ManualValidation
+    displayName: Manual Validation
+    pool: Server
+    timeoutInMinutes: 30
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: 'xyz@gmail.com'
+        approvers: 'xyz@gmail.com'
+        instructions: |
+          Please validate the plan for infra deployment.
+          INC004585256
+  - job: TerraformApply
+    displayName: Terraform Apply
+    condition: and(succeeded(), eq(variables['Build.SourceBranchName'], 'main'))
+    steps:
+    - task: TerraformTask@5
+      displayName: Terraform Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        backendAzureRmUseEntraIdForAuthentication: false
+        backendServiceArm: '$(SVC_CON)'
+        backendAzureRmResourceGroupName: '$(BACKEND_RG_NAME)'
+        backendAzureRmStorageAccountName: '$(BACKEND_STRG_NAME)'
+        backendAzureRmContainerName: '$(BACKEND_CONTAINER_NAME)'
+        backendAzureRmKey: '${{ parameters.environment }}.terraform.tfstate'
+    - task: TerraformTask@5
+      displayName: Terraform Apply
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        commandOptions: '--var-file ${{ parameters.environment }}.terraform.tfvars'
+        environmentServiceNameAzureRM: '$(SVC_CON)'

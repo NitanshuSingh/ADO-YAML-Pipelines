@@ -1,0 +1,18 @@
+trigger: none
+
+pool: Agent Pool
+
+variables:
+- name: SVC_CON
+  value: azure-connection
+- name: BACKEND_RG_NAME
+  value: dev-rg
+- name: BACKEND_STRG_NAME
+  value: shrustrg
+- name: BACKEND_CONTAINER_NAME
+  value: devblob
+  
+stages:
+- template: template/tf.template.yaml
+  parameters:
+    environment: dev
